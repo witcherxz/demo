@@ -1,0 +1,276 @@
+import 'package:flutter/material.dart';
+
+import 'dart:async';
+import 'dart:io';
+
+// Firebase plugin
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+//pushy
+import 'package:flutter/services.dart';
+import 'package:pushy_flutter/pushy_flutter.dart';
+
+//Local Notifications
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+//NOTE: Pushy litener
+// void backgroundNotificationListener(Map<String, dynamic> data) {
+//   // Print notification payload data
+//   print('Received notification: $data');
+
+//   // Notification title
+//   String notificationTitle = 'MyApp';
+
+//   // Attempt to extract the "message" property from the payload: {"message":"Hello World!"}
+//   String notificationText = data['message'] ?? 'Hello World!';
+
+//   // Android: Displays a system notification
+//   // iOS: Displays an alert dialog
+//   Pushy.notify(notificationTitle, notificationText, data);
+
+//   // Clear iOS app badge number
+//   Pushy.clearBadge();
+// }
+
+/// Initialize the [FlutterLocalNotificationsPlugin] package.
+late FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin;
+
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // If you're going to use other Firebase services in the background, such as Firestore,
+  // make sure you call `initializeApp` before using other Firebase services.
+  await Firebase.initializeApp();
+
+  print("Handling a background message: ${message.messageId}");
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // FirebaseMessaging messaging = FirebaseMessaging.instance;
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+
+  NotificationSettings settings = await messaging.requestPermission(
+    alert: true,
+    announcement: false,
+    badge: true,
+    carPlay: false,
+    criticalAlert: false,
+    provisional: false,
+    sound: true,
+  );
+
+  print('User granted permission: ${settings.authorizationStatus}');
+
+  //NOTE: Firebase massage lisner (OLD)
+  // FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+  //   print('Got a message whilst in the foreground!');
+  //   print('Message data: ${message.data}');
+
+  //   if (message.notification != null) {
+  //     print('Message also contained a notification: ${message.notification}');
+  //   }
+  // });
+  // FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+  /// Create a [AndroidNotificationChannel] for heads up notifications
+  late AndroidNotificationChannel channel;
+
+  channel = const AndroidNotificationChannel(
+    'high_importance_channel', // id
+    'High Importance Notifications', // title
+    description: 'This channel is used for important notifications.', // description
+    importance: Importance.high,
+  );
+
+  /// Create an Android Notification Channel.
+  ///
+  /// We use this channel in the `AndroidManifest.xml` file to override the
+  /// default FCM channel to enable heads up notifications.
+  await flutterLocalNotificationsPlugin
+      .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Flutter Demo',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+    );
+  }
+}
+
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({Key? key, required this.title}) : super(key: key);
+  final String title;
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  int _counter = 0;
+  String? _token;
+  @override
+  void initState() {
+    super.initState();
+    // firebaseCloudMessaging_Listeners();
+    FirebaseMessaging.instance
+        .getInitialMessage()
+        .then((RemoteMessage? massage) {
+      if (massage != null) {
+        Navigator.pushNamed(context, '/massage');
+      }
+    });
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      RemoteNotification? notification = message.notification;
+      AndroidNotification? android = message.notification?.android;
+      if (notification != null && android != null && true) {
+        flutterLocalNotificationsPlugin.show(
+          notification.hashCode,
+          notification.title,
+          notification.body,
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              channel.id,
+              channel.name,
+              channel.description,
+              // TODO add a proper drawable resource to android, for now using
+              //      one that already exists in example app.
+              icon: 'launch_background',
+            ),
+          ),
+        );
+      }
+    });
+    //NOTE: Pushy init
+    // Start the Pushy service
+    // Pushy.listen();
+    // Pushy.setNotificationListener(backgroundNotificationListener);
+    // pushyRegister();
+  }
+
+  // void firebaseCloudMessaging_Listeners() {
+  //   if (Platform.isIOS) iOS_Permission();
+
+  //   _firebaseMessaging.getToken().then((token) {
+  //     print(token);
+  //   });
+
+  //   _firebaseMessaging.configure(
+  //     onMessage: (Map<String, dynamic> message) async {
+  //       print('on message $message');
+  //     },
+  //     onResume: (Map<String, dynamic> message) async {
+  //       print('on resume $message');
+  //     },
+  //     onLaunch: (Map<String, dynamic> message) async {
+  //       print('on launch $message');
+  //     },
+  //   );
+  // }
+
+  void iOS_Permission() {
+    _firebaseMessaging.requestNotificationPermissions(
+        IosNotificationSettings(sound: true, badge: true, alert: true));
+    _firebaseMessaging.onIosSettingsRegistered
+        .listen((IosNotificationSettings settings) {
+      print("Settings registered: $settings");
+    });
+  }
+  //NOTE: Pushy Register method
+  // Future pushyRegister() async {
+  //   try {
+  //     // Register the user for push notifications
+  //     String deviceToken = await Pushy.register();
+
+  //     // Print token to console/logcat
+  //     print('Device token: $deviceToken');
+
+  //     // Display an alert with the device token
+  //     showDialog(
+  //         context: context,
+  //         builder: (BuildContext context) {
+  //           return AlertDialog(
+  //               title: Text('Pushy'),
+  //               content: Text('Pushy device token: $deviceToken'),
+  //               actions: [
+  //                 FlatButton(
+  //                     child: Text('OK'),
+  //                     onPressed: () {
+  //                       Navigator.of(context, rootNavigator: true)
+  //                           .pop('dialog');
+  //                     })
+  //               ]);
+  //         });
+
+  //     // Optionally send the token to your backend server via an HTTP GET request
+  //     // ...
+  //   } on PlatformException catch (error) {
+  //     // Display an alert with the error message
+  //     showDialog(
+  //         context: context,
+  //         builder: (BuildContext context) {
+  //           return AlertDialog(
+  //               title: Text('Error'),
+  //               content: Text(error.message.toString()),
+  //               actions: [
+  //                 FlatButton(
+  //                     child: Text('OK'),
+  //                     onPressed: () {
+  //                       Navigator.of(context, rootNavigator: true)
+  //                           .pop('dialog');
+  //                     })
+  //               ]);
+  //         });
+  //   }
+  // }
+
+  void _incrementCounter() {
+    setState(() {
+      _counter++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            const Text(
+              'You have pushed the button this many times:',
+            ),
+            Text(
+              '$_counter',
+              style: Theme.of(context).textTheme.headline4,
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _incrementCounter,
+        tooltip: 'Increment',
+        child: const Icon(Icons.add),
+      ), // This trailing comma makes auto-formatting nicer for build methods.
+    );
+  }
+}
